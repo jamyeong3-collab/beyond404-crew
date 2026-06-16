@@ -1,293 +1,237 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { Bell, ChevronRight, ClipboardList, RefreshCw, ShieldCheck, Truck } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowLeft,
+  ChevronRight,
+  ClipboardList,
+  PackageCheck,
+  Truck,
+} from "lucide-react";
 import { CrewBottomNav } from "@/components/CrewBottomNav";
 import { CrewPhoneShell } from "@/components/CrewPhoneShell";
 import {
   applianceName,
   fetchActiveCrewCalls,
+  fetchCrewCalls,
   fetchPendingCrewCalls,
   formatRequestTime,
-  pickupTypeLabel,
-  statusLabel,
   type CrewCall,
 } from "@/lib/crew-api";
 
-export default function CrewCallsPage() {
+export default function CrewHomePage() {
   const [pendingCalls, setPendingCalls] = useState<CrewCall[]>([]);
   const [activeCalls, setActiveCalls] = useState<CrewCall[]>([]);
+  const [completedCount, setCompletedCount] = useState(0);
+  const [dispatchEnabled, setDispatchEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
 
-  const loadCalls = async () => {
+  const loadSummary = async () => {
     setLoading(true);
     setErrorMessage(null);
 
     try {
-      const [pending, active] = await Promise.all([fetchPendingCrewCalls(), fetchActiveCrewCalls()]);
+      const [pending, active, allCalls] = await Promise.all([
+        fetchPendingCrewCalls(),
+        fetchActiveCrewCalls(),
+        fetchCrewCalls(),
+      ]);
       setPendingCalls(pending);
       setActiveCalls(active);
+      setCompletedCount(
+        allCalls.filter((call) => call.pickupRequest?.status === "COMPLETED" || call.status === "COMPLETED").length,
+      );
       setLastLoadedAt(formatLoadedTime(new Date()));
     } catch {
-      setErrorMessage("수거 요청 목록을 불러오지 못했습니다. 백엔드 연결 상태를 확인해 주세요.");
+      setErrorMessage("수거 현황을 불러오지 못했습니다. 백엔드 연결 상태를 확인해 주세요.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    void loadCalls();
+    void loadSummary();
     const timer = window.setInterval(() => {
-      void loadCalls();
+      void loadSummary();
     }, 5000);
     return () => window.clearInterval(timer);
   }, []);
 
+  const crewName = useMemo(() => resolveCrewName([...activeCalls, ...pendingCalls]), [activeCalls, pendingCalls]);
+  const nextCall = activeCalls[0] ?? pendingCalls[0];
+  const nextPickupRequestId = nextCall?.pickupRequest?.pickupRequestId;
+  const totalCalls = pendingCalls.length + activeCalls.length;
+
   return (
     <CrewPhoneShell>
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-28 pt-4">
-        <header className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-black text-lgred">LG ThinQ Crew</p>
-            <h1 className="mt-2 text-[30px] font-black leading-[1.15] text-ink">수거 요청 현황</h1>
-            <p className="mt-2 text-sm leading-6 text-slate-500">
-              새 요청은 수거 요청에서 확인하고, 수락한 건은 진행 중인 수거에서 이어서 처리할 수 있어요.
-            </p>
-          </div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-28 pt-4 phone-scroll">
+        <header className="grid grid-cols-[40px_1fr_64px] items-center">
           <button
-            className="flex h-11 shrink-0 items-center gap-2 rounded-[14px] border border-white bg-white px-4 text-sm font-black text-slate-700 shadow-sm"
-            disabled={loading}
-            onClick={() => void loadCalls()}
+            className="flex h-10 w-10 items-center justify-center rounded-full text-ink transition hover:bg-white"
             type="button"
+            aria-label="이전"
           >
-            <RefreshCw className={loading ? "animate-spin" : ""} size={15} />
-            새로고침
+            <ArrowLeft size={20} />
+          </button>
+          <div className="text-center">
+            <p className="text-[13px] font-extrabold leading-none text-lgred">LG ThinQ</p>
+            <p className="mt-1 text-[12px] font-semibold text-slate-600">Crew Home</p>
+          </div>
+          <button className="text-right text-[12px] font-bold text-slate-600" type="button">
+            로그아웃
           </button>
         </header>
 
-        <section className="mt-5 overflow-hidden rounded-[28px] bg-[linear-gradient(135deg,#b6144b_0%,#7f1637_100%)] px-5 py-5 text-white shadow-[0_18px_40px_rgba(166,15,59,0.22)]">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.2em] text-white/60">Daily Dispatch</p>
-              <p className="mt-2 text-2xl font-black">오늘 수거 흐름을 한 번에 확인하세요</p>
-            </div>
-            <span className="rounded-full bg-white/15 px-3 py-1 text-[11px] font-black text-white/80">
-              {loading ? "갱신 중" : "준비 완료"}
-            </span>
-          </div>
-
-          <div className="mt-4 grid grid-cols-3 gap-3">
-            <MiniStat label="대기 콜" value={String(pendingCalls.length)} />
-            <MiniStat label="진행 중" value={String(activeCalls.length)} />
-            <MiniStat label="마지막 확인" value={lastLoadedAt ?? "--:--:--"} />
-          </div>
+        <section className="mt-7">
+          <p className="text-[15px] font-bold text-slate-600">{crewName}님, 안녕하세요</p>
+          <h1 className="mt-2 whitespace-nowrap text-[20px] font-extrabold leading-snug text-ink">
+            오늘도 안전한 수거를 시작해볼까요?
+          </h1>
         </section>
 
-        <CrewNoticeCard loading={loading} />
-
-        <section className="mt-4 rounded-[24px] bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
+        <section className="mt-5 rounded-[22px] bg-white px-5 py-5 shadow-[0_6px_18px_rgba(15,23,42,0.05)]">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-black text-ink">오늘의 처리 루틴</p>
-              <p className="mt-1 text-xs font-semibold text-slate-400">
-                수거 요청 확인부터 허브 완료 등록까지 같은 흐름으로 정리했어요.
+              <p className="text-[14px] font-bold text-slate-500">오늘 배차 상태</p>
+              <p className="mt-1 text-[28px] font-extrabold leading-none text-ink">
+                {dispatchEnabled ? "수신 중" : "수신 중지"}
+              </p>
+              <p className="mt-3 text-[12px] font-medium text-slate-500">
+                {dispatchEnabled ? "새 수거 요청을 받을 수 있어요" : "새 요청이 배정되지 않아요"}
               </p>
             </div>
-            <span className="rounded-full bg-lgred/10 px-3 py-1 text-[11px] font-black text-lgred">Crew Flow</span>
+            <button
+              aria-pressed={dispatchEnabled}
+              className={`flex h-9 w-[82px] items-center rounded-full px-1 transition ${
+                dispatchEnabled ? "justify-end bg-lgred/10" : "justify-start bg-slate-100"
+              }`}
+              onClick={() => setDispatchEnabled((enabled) => !enabled)}
+              type="button"
+            >
+              <span
+                className={`flex h-7 min-w-10 items-center justify-center rounded-full px-2 text-[11px] font-extrabold shadow-sm ${
+                  dispatchEnabled ? "bg-lgred text-white" : "bg-white text-slate-500"
+                }`}
+              >
+                {dispatchEnabled ? "ON" : "OFF"}
+              </span>
+            </button>
           </div>
 
-          <div className="mt-4 grid gap-3">
-            <RoutineStep index="1" title="수거 요청 확인" description="예약 콜과 바로콜을 확인하고 상세 페이지에서 수락 여부를 결정합니다." />
-            <RoutineStep index="2" title="진행 중인 수거 이동" description="수락 완료 후에는 진행 중인 수거에서 이동 상태와 실시간 위치를 관리합니다." />
-            <RoutineStep index="3" title="허브 전달 및 완료" description="문앞 도착, 처리 완료, 증빙 등록까지 한 흐름으로 마무리합니다." />
+          <div className="mt-5 h-px bg-slate-100" />
+
+          <div className="mt-4 grid grid-cols-3 divide-x divide-slate-100">
+            <StatusStat label="수거 요청" value={`${pendingCalls.length}건`} />
+            <StatusStat label="진행 중" value={`${activeCalls.length}건`} />
+            <StatusStat label="수거 완료" value={`${completedCount}건`} />
           </div>
         </section>
 
-        <CallsSection
-          calls={pendingCalls}
-          emptyMessage="현재 수락 대기 중인 수거 요청이 없습니다."
-          icon={<ClipboardList size={16} />}
-          subtitle="새로 들어온 예약/바로콜을 확인하고 수락할 수 있어요."
-          title="수거 요청"
-          toHref={(pickupRequestId) => `/calls/${pickupRequestId}`}
-        />
-
-        <CallsSection
-          calls={activeCalls}
-          emptyMessage="현재 진행 중인 수거가 없습니다."
-          icon={<Truck size={16} />}
-          subtitle="수락한 콜은 이 영역에서 이동 상황과 처리 상태를 이어서 관리합니다."
-          title="진행 중인 수거"
-          toHref={(pickupRequestId) => `/calls/${pickupRequestId}/active`}
-        />
-
-        <div
-          className={`mt-4 rounded-[18px] px-4 py-4 text-sm font-bold leading-6 ${
-            errorMessage ? "bg-red-50 text-red-700" : "bg-white text-slate-600 shadow-sm"
-          }`}
+        <Link
+          className="mt-3 flex items-center gap-4 rounded-[22px] bg-white px-4 py-4 shadow-[0_6px_18px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(15,23,42,0.08)]"
+          href={nextPickupRequestId ? (activeCalls[0] ? `/calls/${nextPickupRequestId}/active` : `/calls/${nextPickupRequestId}`) : "/calls"}
         >
-          {loading
-            ? "콜 목록을 최신 상태로 불러오고 있습니다..."
-            : errorMessage ?? `백엔드 연결 정상${lastLoadedAt ? ` · 마지막 확인 ${lastLoadedAt}` : ""}`}
-        </div>
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-lgred/10 text-lgred">
+            <PackageCheck size={21} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] font-extrabold text-lgred">{activeCalls.length > 0 ? "진행 중인 수거" : "새 수거 요청"}</p>
+            <p className="mt-1 truncate text-[15px] font-extrabold text-ink">
+              {nextCall ? applianceName(nextCall) : "확인할 수거 건이 없습니다"}
+            </p>
+            <p className="mt-1 truncate text-[12px] font-medium text-slate-500">
+              {nextCall
+                ? formatRequestTime(nextCall.pickupRequest?.requestedAt, nextCall.pickupRequest?.scheduledAt)
+                : "새 요청이 들어오면 이곳에 표시됩니다."}
+            </p>
+          </div>
+          <ChevronRight className="shrink-0 text-ink" size={19} />
+        </Link>
+
+        <section className="mt-3 rounded-[22px] bg-white py-3 shadow-[0_6px_18px_rgba(15,23,42,0.05)]">
+          <div className="flex items-center justify-between px-4 py-2">
+            <h2 className="text-[16px] font-extrabold text-ink">내 작업</h2>
+            <span className="rounded-full bg-cloud px-3 py-1 text-[12px] font-bold text-slate-500">전체 {totalCalls}</span>
+          </div>
+          <WorkRow
+            count={pendingCalls.length}
+            href="/calls"
+            icon={<ClipboardList size={20} />}
+            label="수거 요청"
+            sublabel="수락 대기"
+          />
+          <WorkRow
+            count={activeCalls.length}
+            href="/active"
+            icon={<Truck size={20} />}
+            label="진행 중인 수거"
+            sublabel="이동 및 처리"
+          />
+        </section>
+
+        {errorMessage ? (
+          <div className="mt-4 rounded-[18px] bg-red-50 px-4 py-4 text-sm font-semibold leading-6 text-red-700">
+            {errorMessage}
+          </div>
+        ) : null}
       </div>
       <CrewBottomNav />
     </CrewPhoneShell>
   );
 }
 
-function CrewNoticeCard({ loading }: { loading: boolean }) {
+function StatusStat({ label, value }: { label: string; value: string }) {
   return (
-    <section className="mt-4 rounded-[24px] bg-white p-5 shadow-sm">
-      <div className="flex items-center gap-2 text-sm font-black text-ink">
-        <ShieldCheck size={16} className="text-lgred" />
-        운영 안내
-      </div>
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <NoticeItem
-          title="수거 요청"
-          description="예약 콜과 바로콜이 도착하면 요청 상세를 확인한 뒤 수락할 수 있습니다."
-        />
-        <NoticeItem
-          title="진행 중인 수거"
-          description={
-            loading
-              ? "새 요청과 진행 중인 콜을 동기화하고 있어요."
-              : "수락이 완료되면 진행 중인 수거로 이동해 출발, 도착, 처리 완료를 순서대로 등록합니다."
-          }
-        />
-      </div>
-    </section>
-  );
-}
-
-function NoticeItem({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="rounded-[18px] bg-cloud px-4 py-4">
-      <p className="text-sm font-black text-ink">{title}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
+    <div className="px-3 first:pl-0 last:pr-0">
+      <p className="text-center text-[22px] font-extrabold leading-none text-ink">{value}</p>
+      <p className="mt-2 text-center text-[12px] font-medium text-slate-500">{label}</p>
     </div>
   );
 }
 
-function RoutineStep({
-  index,
-  title,
-  description,
-}: {
-  index: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="flex gap-3 rounded-[18px] bg-cloud px-4 py-4">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-sm font-black text-lgred shadow-sm">
-        {index}
-      </span>
-      <div>
-        <p className="text-sm font-black text-ink">{title}</p>
-        <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
-      </div>
-    </div>
-  );
-}
-
-function CallsSection({
-  calls,
-  emptyMessage,
+function WorkRow({
+  count,
+  href,
   icon,
-  subtitle,
-  title,
-  toHref,
+  label,
+  sublabel,
 }: {
-  calls: CrewCall[];
-  emptyMessage: string;
+  count: number;
+  href: string;
   icon: React.ReactNode;
-  subtitle: string;
-  title: string;
-  toHref: (pickupRequestId: number) => string;
+  label: string;
+  sublabel: string;
 }) {
   return (
-    <section className="mt-4 rounded-[24px] bg-white p-4 shadow-sm">
-      <div className="flex items-center gap-2 text-sm font-black text-ink">
-        <span className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-lgred/10 text-lgred">{icon}</span>
-        <div>
-          <p>{title}</p>
-          <p className="mt-1 text-xs font-semibold text-slate-400">{subtitle}</p>
-        </div>
+    <Link
+      className="mx-3 flex items-center gap-4 border-t border-slate-100 px-1 py-4 transition first:border-t-0 hover:bg-slate-50"
+      href={href}
+    >
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[15px] bg-lgred/10 text-lgred">
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[15px] font-extrabold text-ink">{label}</p>
+        <p className="mt-1 text-[12px] font-medium text-slate-500">{sublabel}</p>
       </div>
-
-      <div className="mt-4 max-h-[310px] space-y-3 overflow-y-auto pr-1 phone-scroll">
-        {calls.length > 0 ? (
-          calls.map((call) => {
-            const pickupRequestId = call.pickupRequest?.pickupRequestId;
-            if (!pickupRequestId) return null;
-
-            return (
-              <Link
-                key={`${title}-${call.id}`}
-                className="block rounded-[20px] border border-slate-200 bg-cloud px-4 py-4 transition hover:border-lgred/30 hover:bg-white"
-                href={toHref(pickupRequestId)}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-base font-black text-ink">{applianceName(call)}</p>
-                    <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">
-                      {call.pickupRequest?.address ?? "수거 주소 정보 없음"}
-                    </p>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-white px-3 py-1 text-[11px] font-black text-slate-600 shadow-sm">
-                    {statusLabel(call.pickupRequest?.status)}
-                  </span>
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  <InfoTile
-                    label="요청 시간"
-                    value={formatRequestTime(call.pickupRequest?.requestedAt, call.pickupRequest?.scheduledAt)}
-                  />
-                  <InfoTile label="예약 방식" value={pickupTypeLabel(call.pickupRequest?.pickupType)} />
-                </div>
-
-                <div className="mt-4 flex items-center justify-between rounded-[16px] bg-white px-4 py-3 text-sm font-black text-lgred shadow-sm">
-                  <span className="inline-flex items-center gap-2">
-                    <Bell size={15} />
-                    {title === "진행 중인 수거" ? "진행 화면 열기" : "콜 상세 보기"}
-                  </span>
-                  <ChevronRight size={16} />
-                </div>
-              </Link>
-            );
-          })
-        ) : (
-          <div className="rounded-[20px] bg-cloud px-4 py-10 text-center text-sm font-semibold text-slate-500">
-            {emptyMessage}
-          </div>
-        )}
-      </div>
-    </section>
+      <span className="rounded-full bg-cloud px-3 py-1 text-[12px] font-bold text-slate-600">{count}건</span>
+      <ChevronRight className="shrink-0 text-slate-400" size={18} />
+    </Link>
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[18px] bg-white/12 px-3 py-3 text-left backdrop-blur-sm">
-      <p className="text-[11px] font-bold text-white/65">{label}</p>
-      <p className="mt-2 truncate text-sm font-black text-white">{value}</p>
-    </div>
-  );
-}
+function resolveCrewName(calls: CrewCall[]) {
+  for (const call of calls) {
+    const name = call.crewProfile?.name ?? call.pickupRequest?.crewName;
+    if (name?.trim()) {
+      return name.trim();
+    }
+  }
 
-function InfoTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[16px] bg-white px-3 py-3 shadow-sm">
-      <p className="text-[11px] font-bold text-slate-400">{label}</p>
-      <p className="mt-1 text-sm font-black text-ink">{value}</p>
-    </div>
-  );
+  return "Crew";
 }
 
 function formatLoadedTime(date: Date) {

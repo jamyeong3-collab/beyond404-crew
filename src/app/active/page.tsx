@@ -1,0 +1,19 @@
+"use client";
+
+import { Truck } from "lucide-react";
+import { CrewCallsListPage } from "@/components/CrewCallsListPage";
+import { fetchActiveCrewCalls } from "@/lib/crew-api";
+
+export default function ActiveCallsPage() {
+  return (
+    <CrewCallsListPage
+      actionLabel="진행 화면 열기"
+      emptyMessage="현재 진행 중인 수거가 없습니다."
+      fetchCalls={fetchActiveCrewCalls}
+      icon={Truck}
+      subtitle="수락한 콜의 이동 상황과 처리 상태를 이어서 관리합니다."
+      title="진행 중인 수거"
+      toHref={(pickupRequestId) => `/calls/${pickupRequestId}/active`}
+    />
+  );
+}
