@@ -24,6 +24,9 @@ type GoogleCanvasMapProps = {
   fitBounds?: boolean;
   onMarkerClick?: (marker: MapMarker) => void;
   onStatusChange?: (status: "loading" | "ready" | "error") => void;
+  routeColor?: string;
+  routeOpacity?: number;
+  routeWeight?: number;
 };
 
 type LoaderState =
@@ -93,7 +96,7 @@ function loadGoogleMaps(apiKey: string) {
     script.defer = true;
     script.src =
       `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}` +
-      `&v=weekly&loading=async&callback=${callbackName}`;
+      `&language=ko&region=IN&v=weekly&loading=async&callback=${callbackName}`;
     script.onerror = () => reject(new Error("Failed to load Google Maps script."));
     document.head.appendChild(script);
   });
@@ -141,11 +144,15 @@ export function GoogleCanvasMap({
   fitBounds = false,
   onMarkerClick,
   onStatusChange,
+  routeColor = "#19c6bf",
+  routeOpacity = 0.9,
+  routeWeight = 8,
 }: GoogleCanvasMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const markerRefs = useRef<google.maps.Marker[]>([]);
   const polylineRef = useRef<google.maps.Polyline | null>(null);
+  const hasAutoFitRef = useRef(false);
   const { status } = useGoogleMaps(apiKey);
 
   const stableMarkers = useMemo(() => markers, [markers]);
@@ -200,32 +207,41 @@ export function GoogleCanvasMap({
       return markerInstance;
     });
 
-    if (polylineRef.current) {
+    if (stablePath.length > 1) {
+      if (polylineRef.current) {
+        polylineRef.current.setOptions({
+          path: stablePath,
+          strokeColor: routeColor,
+          strokeOpacity: routeOpacity,
+          strokeWeight: routeWeight,
+        });
+        polylineRef.current.setMap(map);
+      } else {
+        polylineRef.current = new window.google.maps.Polyline({
+          map,
+          path: stablePath,
+          strokeColor: routeColor,
+          strokeOpacity: routeOpacity,
+          strokeWeight: routeWeight,
+        });
+      }
+    } else if (polylineRef.current) {
       polylineRef.current.setMap(null);
       polylineRef.current = null;
     }
 
-    if (stablePath.length > 1) {
-      const polyline = new window.google.maps.Polyline({
-        path: stablePath,
-        strokeColor: "#19c6bf",
-        strokeOpacity: 0.9,
-        strokeWeight: 5,
-      });
-      polyline.setMap(map);
-      polylineRef.current = polyline;
-    }
-
     const points = [...stableMarkers.map((marker) => marker.position), ...stablePath];
-    if (fitBounds && points.length > 1) {
+    if (fitBounds && points.length > 1 && !hasAutoFitRef.current) {
       const bounds = new window.google.maps.LatLngBounds();
       points.forEach((point) => bounds.extend(point));
       map.fitBounds(bounds, 48);
-    } else {
+      hasAutoFitRef.current = true;
+    } else if (!fitBounds && !hasAutoFitRef.current) {
       map.setCenter(center);
       map.setZoom(zoom);
+      hasAutoFitRef.current = true;
     }
-  }, [center, fitBounds, onMarkerClick, stableMarkers, stablePath, status, zoom]);
+  }, [center, fitBounds, onMarkerClick, routeColor, routeOpacity, routeWeight, stableMarkers, stablePath, status, zoom]);
 
   return <div className={className} ref={containerRef} />;
 }

@@ -12,9 +12,9 @@ import {
   updateCrewLocation,
   type CrewCall,
 } from "@/lib/crew-api";
-import { ArrowLeft, ChevronRight, Home, MapPin, Navigation, Timer, Truck, Warehouse } from "lucide-react";
+import { ArrowLeft, ChevronRight, Home, MapPin, Navigation, Truck, Warehouse } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 type Coordinate = {
   lat: number;
@@ -37,7 +37,6 @@ type PickupMapMarker = {
 };
 
 const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim() ?? "";
-const DEFAULT_CENTER = { lat: 37.5665, lng: 126.978 };
 const DEFAULT_PICKUP_PHOTO = "crew-pickup-proof-demo.jpg";
 const DEFAULT_HUB_PHOTO = "crew-hub-proof-demo.jpg";
 const DEFAULT_PICKUP_MEMO = "문앞 도착 후 상태 확인 및 수거 완료";
@@ -132,8 +131,13 @@ export default function CrewActiveCallPage() {
     };
 
     const startFallbackSimulation = () => {
-      const pickupLat = call?.booking?.pickupLat ?? DEFAULT_CENTER.lat;
-      const pickupLng = call?.booking?.pickupLng ?? DEFAULT_CENTER.lng;
+      if (call?.booking?.pickupLat == null || call?.booking?.pickupLng == null) {
+        setMessage("수거지 좌표가 없어 크루 위치 시뮬레이션을 시작할 수 없습니다.");
+        return () => undefined;
+      }
+
+      const pickupLat = call.booking.pickupLat;
+      const pickupLng = call.booking.pickupLng;
       const hubLat = call?.tracking?.processingCenter?.lat ?? pickupLat + 0.014;
       const hubLng = call?.tracking?.processingCenter?.lng ?? pickupLng - 0.012;
       const headingToHub = status === "ARRIVED";
@@ -253,25 +257,23 @@ export default function CrewActiveCallPage() {
     : null;
 
   const pickupAddress = call?.pickupRequest?.address ?? "수거지 주소 정보가 없습니다.";
-  const routeTarget = status === "COMPLETED" ? hubLocation ?? pickupLocation : pickupLocation;
-  const baseCenter = crewLocation ?? pickupLocation ?? hubLocation ?? DEFAULT_CENTER;
-  const mapCenter = selectedMapCenter ?? baseCenter;
+  const mapCenter = selectedMapCenter ?? crewLocation ?? pickupLocation ?? hubLocation;
   const mapZoom = selectedMapZoom ?? 17;
   const mapMarkers: PickupMapMarker[] = [
     ...(pickupLocation
-      ? [{ key: "pickup" as const, label: "", position: pickupLocation, title: "pickup", variant: "pickup" as const }]
+      ? [{ key: "pickup" as const, label: "", position: pickupLocation, title: "수거지", variant: "pickup" as const }]
       : []),
     ...(crewLocation
-      ? [{ key: "crew" as const, label: "C", position: crewLocation, title: "crew", variant: "crew" as const }]
+      ? [{ key: "crew" as const, label: "C", position: crewLocation, title: "크루 현재 위치", variant: "crew" as const }]
       : []),
-    ...(hubLocation ? [{ key: "hub" as const, label: "H", position: hubLocation, title: "hub", variant: "hub" as const }] : []),
+    ...(hubLocation ? [{ key: "hub" as const, label: "H", position: hubLocation, title: "처리 허브", variant: "hub" as const }] : []),
   ];
   const mapPath =
     call?.tracking?.route?.points?.map((point) => ({
       lat: point.lat,
       lng: point.lng,
-    })) ??
-    (crewLocation && routeTarget ? [crewLocation, routeTarget] : []);
+    })) ?? [];
+  const hasRoadRoute = mapPath.length > 1;
 
   const statusText = pickupStatusLabel(status);
   const crewDistance = call?.tracking?.route?.distanceLabel ?? formatDistance(call?.tracking?.metrics?.crewToPickupMeters);
@@ -298,6 +300,9 @@ export default function CrewActiveCallPage() {
   };
 
   const primaryDetailLink = status === "COMPLETED" ? "/" : "/active";
+  const destinationLabel = status === "ARRIVED" || status === "COMPLETED" ? "처리 허브" : "수거지";
+  const destinationAddress = destinationLabel === "처리 허브" ? hubAddress : pickupAddress;
+  const navigationMetric = [crewDistance, durationLabel].filter((value) => value && value !== "-").join(" · ");
 
   return (
     <CrewPhoneShell>
@@ -326,26 +331,67 @@ export default function CrewActiveCallPage() {
             이동 지도
           </div>
 
-          <div className="mt-4 overflow-hidden rounded-[20px] border border-slate-200 bg-cloud">
-            {GOOGLE_MAPS_API_KEY ? (
-              <GoogleCanvasMap
-                apiKey={GOOGLE_MAPS_API_KEY}
-                center={mapCenter}
-                className="h-[500px] w-full"
-                markers={mapMarkers}
-                onMarkerClick={handleMarkerClick}
-                path={mapPath}
-                zoom={mapZoom}
-              />
+          <div className="mt-4 overflow-hidden rounded-[24px] border border-slate-200 bg-cloud">
+            {mapCenter ? (
+              GOOGLE_MAPS_API_KEY ? (
+                <div className="relative">
+                  <GoogleCanvasMap
+                    apiKey={GOOGLE_MAPS_API_KEY}
+                    center={mapCenter}
+                    className="h-[430px] w-full"
+                    fitBounds
+                    markers={mapMarkers}
+                    onMarkerClick={handleMarkerClick}
+                    path={mapPath}
+                    routeColor="#d33126"
+                    routeOpacity={0.94}
+                    routeWeight={10}
+                    zoom={mapZoom}
+                  />
+                  <div className="pointer-events-none absolute left-3 right-3 top-3 rounded-[22px] bg-white/95 px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.14)] backdrop-blur">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-1 flex flex-col items-center">
+                        <span className="h-3 w-3 rounded-full bg-[#2563eb] ring-4 ring-blue-100" />
+                        <span className="my-1 h-7 w-px border-l border-dotted border-slate-400" />
+                        <MapPin size={18} className="text-[#d33126]" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-black text-blue-600">크루 현재 위치</p>
+                        <div className="my-2 h-px bg-slate-200" />
+                        <p className="text-lg font-black text-ink">{destinationLabel}</p>
+                        <p className="mt-1 line-clamp-2 text-xs font-bold leading-5 text-slate-500">{destinationAddress}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="pointer-events-none absolute bottom-3 left-3 right-3 flex items-center justify-between rounded-[18px] bg-white/95 px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.14)] backdrop-blur">
+                    <div>
+                      <p className="text-xs font-black text-slate-500">{hasRoadRoute ? "도로 경로 안내 중" : "도로 경로 계산 중"}</p>
+                      <p className="mt-1 text-sm font-black text-ink">{navigationMetric || "위치 확인 중"}</p>
+                    </div>
+                    <span className="rounded-full bg-lgred px-3 py-1 text-xs font-black text-white">
+                      {hasRoadRoute ? "LIVE" : "WAIT"}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <LeafletTrackingMap
+                  center={mapCenter}
+                  className="h-[430px] w-full"
+                  markers={mapMarkers}
+                  onMarkerClick={handleMarkerClick}
+                  path={mapPath}
+                  zoom={mapZoom}
+                />
+              )
             ) : (
-              <LeafletTrackingMap
-                center={mapCenter}
-                className="h-[500px] w-full"
-                markers={mapMarkers}
-                onMarkerClick={handleMarkerClick}
-                path={mapPath}
-                zoom={mapZoom}
-              />
+              <div className="flex h-[430px] w-full items-center justify-center px-6 text-center">
+                <div>
+                  <p className="text-sm font-black text-ink">이동 지도를 표시할 수 없습니다</p>
+                  <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
+                    수거지 좌표 또는 크루 위치가 확인되면 경로가 표시됩니다.
+                  </p>
+                </div>
+              </div>
             )}
           </div>
 
@@ -441,7 +487,7 @@ function ProgressActionCard({
 }: {
   active: boolean;
   disabled: boolean;
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   description: string;
   onClick: () => void;
